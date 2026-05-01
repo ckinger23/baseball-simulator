@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Baseball Matchup Simulator</title>
+    <link rel="stylesheet" href="/static/styles.css?v=20260403a" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Baseball Matchup Simulator</p>
+          <h1>Draft today’s matchup, tune the pitch mix, and see the run distribution.</h1>
+          <p class="hero-text">
+            This interface combines live MLB schedule context, local Statcast-backed lineup candidates,
+            and the simulator pipeline you’ve been building into one working analyst workflow.
+          </p>
+        </div>
+        <div class="hero-stat-grid">
+          <div class="hero-stat">
+            <span class="hero-stat-label">Mode</span>
+            <strong id="hero-mode">Live Prep</strong>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-label">Database</span>
+            <strong id="hero-db">Connected</strong>
+          </div>
+          <div class="hero-stat">
+            <span class="hero-stat-label">Recent Runs</span>
+            <strong id="hero-recent-count">0</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel control-panel">
+          <div class="panel-heading">
+            <p class="panel-kicker">Step 1</p>
+            <h2>Prepare A Matchup</h2>
+          </div>
+
+          <form id="prepare-form" class="control-form">
+            <label class="field">
+              <span>Team</span>
+              <select id="team-select" required>
+                <option value="">Loading teams...</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Game Date</span>
+              <input id="game-date" type="date" required />
+            </label>
+
+            <div class="field field-static">
+              <span>Lineup Card</span>
+              <div class="static-value">Always a 9-hitter lineup for starters. We can add a reliever mode later.</div>
+            </div>
+
+            <div class="pitch-grid">
+              <label class="field">
+                <span>4-Seam `ff`</span>
+                <input id="mix-ff" type="number" min="0" max="1" step="0.05" value="0.55" />
+              </label>
+              <label class="field">
+                <span>Slider `sl`</span>
+                <input id="mix-sl" type="number" min="0" max="1" step="0.05" value="0.25" />
+              </label>
+              <label class="field">
+                <span>Changeup `ch`</span>
+                <input id="mix-ch" type="number" min="0" max="1" step="0.05" value="0.20" />
+              </label>
+            </div>
+
+            <div class="field-group">
+              <label class="field">
+                <span>Reliever Scenario</span>
+                <select id="reliever-select">
+                  <option value="">Starter Only</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Reliever Entry Batter</span>
+                <input id="reliever-entry-batter" type="number" min="1" max="60" value="19" />
+              </label>
+            </div>
+
+            <div class="field-group">
+              <label class="field">
+                <span>Reliever Entry Inning</span>
+                <input id="reliever-entry-inning" type="number" min="1" max="12" value="7" />
+              </label>
+            </div>
+
+            <div class="button-row">
+              <button id="smart-draft-btn" type="button" class="button button-secondary">Preview Draft</button>
+              <button id="prepare-btn" type="submit" class="button button-primary">Prepare And Run</button>
+            </div>
+          </form>
+
+          <div id="status-banner" class="status-banner">Loading team and matchup context...</div>
+        </section>
+
+        <section class="panel draft-panel">
+          <div class="panel-heading">
+            <p class="panel-kicker">Step 2</p>
+            <h2>Draft Snapshot</h2>
+          </div>
+          <div id="draft-empty" class="empty-state">
+            Select a team and date to pull the scheduled game, probable opposing pitcher, and likely lineup.
+          </div>
+          <div id="draft-content" class="hidden">
+            <div class="draft-overview">
+              <div class="draft-card">
+                <span class="draft-label">Scheduled Game</span>
+                <strong id="draft-game"></strong>
+                <p id="draft-game-meta" class="muted"></p>
+              </div>
+              <div class="draft-card">
+                <span class="draft-label">Probable Pitcher</span>
+                <strong id="draft-pitcher"></strong>
+                <p id="draft-pitcher-meta" class="muted"></p>
+              </div>
+              <div class="draft-card">
+                <span class="draft-label">Opponent</span>
+                <strong id="draft-opponent"></strong>
+                <p id="draft-opponent-meta" class="muted"></p>
+              </div>
+            </div>
+
+            <div>
+              <div class="subheading-row">
+                <h3 class="subheading">Lineup Card</h3>
+                <button id="reset-lineup-btn" type="button" class="button button-ghost hidden">Reset To Draft</button>
+              </div>
+              <p class="helper-copy">
+                Drag hitters across the 9 lineup slots, or click a slot and then click a bench hitter to swap them in.
+              </p>
+              <div id="draft-lineup" class="lineup-board"></div>
+            </div>
+
+            <div>
+              <div class="subheading-row">
+                <h3 class="subheading">Bench And Candidate Pool</h3>
+                <span id="bench-count" class="bench-count hidden"></span>
+              </div>
+              <p class="helper-copy">
+                These are the extra lineup candidates from the local team pool that did not make the initial draft.
+              </p>
+              <div id="bench-list" class="bench-board"></div>
+            </div>
+
+            <div>
+              <h3 class="subheading">Draft Notes</h3>
+              <ul id="draft-notes" class="note-list"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel results-panel">
+          <div class="panel-heading">
+            <p class="panel-kicker">Step 3</p>
+            <h2>Prepared Matchup</h2>
+          </div>
+          <div id="results-empty" class="empty-state">
+            Run a prepared matchup to see expected rates, lineup projections, and simulation output.
+          </div>
+          <div id="results-content" class="hidden">
+            <div class="metric-grid">
+              <div class="metric-card">
+                <span class="metric-label">Expected K%</span>
+                <strong id="metric-k"></strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Expected BB%</span>
+                <strong id="metric-bb"></strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Expected BIP%</span>
+                <strong id="metric-bip"></strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Hard-Hit On Contact</span>
+                <strong id="metric-hard-hit"></strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Estimated Run Value</span>
+                <strong id="metric-run-value"></strong>
+              </div>
+            </div>
+
+            <div class="summary-card">
+              <h3 class="subheading">Model Summary</h3>
+              <p id="matchup-summary" class="summary-text"></p>
+            </div>
+
+            <div class="two-column">
+              <div>
+                <h3 class="subheading">Simulation Distribution</h3>
+                <div id="simulation-grid" class="simulation-grid"></div>
+              </div>
+              <div>
+                <h3 class="subheading">Top Hitter Projections</h3>
+                <div id="projection-list" class="projection-list"></div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="subheading">Preparation Notes</h3>
+              <ul id="prepare-notes" class="note-list"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel recent-panel">
+          <div class="panel-heading">
+            <p class="panel-kicker">Step 4</p>
+            <h2>Recent Saved Runs</h2>
+          </div>
+          <p class="helper-copy">
+            Select two saved scenarios to compare how the pitching plan changed the expected outcome.
+          </p>
+          <div id="recent-list" class="recent-list"></div>
+        </section>
+
+        <section class="panel compare-panel">
+          <div class="panel-heading">
+            <p class="panel-kicker">Step 5</p>
+            <h2>Scenario Comparison</h2>
+          </div>
+          <div id="compare-empty" class="empty-state">
+            Choose two saved matchup runs from the recent list to compare them side by side.
+          </div>
+          <div id="compare-content" class="hidden">
+            <div id="compare-summary" class="compare-grid"></div>
+            <div class="summary-card">
+              <h3 class="subheading">Comparison Read</h3>
+              <p id="compare-notes" class="summary-text"></p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js?v=20260403a" defer></script>
+  </body>
+</html>

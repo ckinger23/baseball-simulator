@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.pytest_cache/
+
+# Raw data (large CSVs) — keep sample for tests
+data/raw/*.csv
+!data/raw/sample_statcast.csv
+
+# Processed/generated data
+data/processed/*.jsonl
+data/processed/*.csv
+data/processed/**/*.jsonl
+data/processed/**/*.csv
+
+artifacts/

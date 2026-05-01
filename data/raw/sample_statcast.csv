@@ -1,0 +1,6 @@
+game_pk,at_bat_number,pitch_number,pitcher,batter,pitch_type,p_throws,stand,balls,strikes,zone,plate_x,plate_z,release_speed,release_spin_rate,release_extension,pfx_x,pfx_z,release_pos_x,release_pos_z,description,estimated_woba_using_speedangle,delta_run_exp,launch_speed,events,game_date,inning,inning_topbot,batting_team,fld_team,outs_when_up,on_1b,on_2b,on_3b,bat_score,post_bat_score,home_team,away_team,player_name,batter_name
+12345,7,1,1001,2002,FF,R,L,0,0,5,0.1,2.8,95.2,2400,6.1,0.8,1.2,-1.8,5.6,called_strike,,0.02,,,2025-06-01,1,Top,CHC,STL,0,,,,0,0,STL,CHC,Pitcher One,Hitter One
+12345,7,2,1001,2002,SL,R,L,0,1,13,1.1,1.9,84.4,2600,6.0,-0.3,0.2,-1.7,5.5,hit_into_play,0.45,0.30,101.2,single,2025-06-01,1,Top,CHC,STL,0,,,,0,1,STL,CHC,Pitcher One,Hitter One
+12345,8,1,1001,2003,FF,R,R,0,0,11,-0.9,3.9,95.0,2388,6.1,0.7,1.0,-1.8,5.6,ball,,0.01,,,2025-06-01,1,Top,CHC,STL,1,2002,,,1,1,STL,CHC,Pitcher One,Hitter Two
+12345,8,2,1001,2003,SL,R,R,1,0,14,0.9,1.4,84.0,2590,6.0,-0.2,0.3,-1.7,5.5,swinging_strike,, -0.05,,,2025-06-01,1,Top,CHC,STL,1,2002,,,1,1,STL,CHC,Pitcher One,Hitter Two
+12345,8,3,1001,2003,SL,R,R,1,1,13,0.8,1.8,84.3,2580,6.0,-0.2,0.2,-1.7,5.5,swinging_strike,, -0.12,,strikeout,2025-06-01,1,Top,CHC,STL,1,2002,,,1,1,STL,CHC,Pitcher One,Hitter Two
