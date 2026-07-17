@@ -57,6 +57,22 @@ const els = {
   compareContent: document.getElementById("compare-content"),
   compareSummary: document.getElementById("compare-summary"),
   compareNotes: document.getElementById("compare-notes"),
+  tradeForm: document.getElementById("trade-form"),
+  tradeStartDate: document.getElementById("trade-start-date"),
+  tradeEndDate: document.getElementById("trade-end-date"),
+  tradeMaxGames: document.getElementById("trade-max-games"),
+  tradeDisplacedSelect: document.getElementById("trade-displaced-select"),
+  tradeSourceTeamSelect: document.getElementById("trade-source-team-select"),
+  tradeIncomingSelect: document.getElementById("trade-incoming-select"),
+  tradeEmpty: document.getElementById("trade-empty"),
+  tradeContent: document.getElementById("trade-content"),
+  tradeWindowRuns: document.getElementById("trade-window-runs"),
+  tradeWindowBand: document.getElementById("trade-window-band"),
+  tradePerGame: document.getElementById("trade-per-game"),
+  tradeGamesCount: document.getElementById("trade-games-count"),
+  tradeRead: document.getElementById("trade-read"),
+  tradeGameList: document.getElementById("trade-game-list"),
+  tradeNotes: document.getElementById("trade-notes"),
 };
 
 function setStatus(message, tone = "info") {
@@ -153,9 +169,55 @@ async function fetchJson(url, options = {}) {
 
 async function loadTeams() {
   const teams = await fetchJson("/teams?season=2025&limit=60");
-  els.teamSelect.innerHTML = `<option value="">Choose a team...</option>${teams
+  const options = teams
     .map((team) => `<option value="${team.team_id}">${team.name} (${team.team_id.toUpperCase()})</option>`)
-    .join("")}`;
+    .join("");
+  els.teamSelect.innerHTML = `<option value="">Choose a team...</option>${options}`;
+  els.tradeSourceTeamSelect.innerHTML = `<option value="">Choose a team...</option>${options}`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function hitterOptions(candidates) {
+  return candidates
+    .map(
+      (candidate) =>
+        `<option value="${escapeHtml(candidate.hitter_id)}" data-name="${escapeHtml(
+          candidate.hitter_name
+        )}" data-side="${escapeHtml(candidate.batting_side || "")}">${escapeHtml(candidate.hitter_name)} (${escapeHtml(
+          candidate.batting_side || "?"
+        )}${candidate.plate_appearance_count == null ? "" : ` • ${candidate.plate_appearance_count} PA`})</option>`
+    )
+    .join("");
+}
+
+async function loadTradeDisplacedCandidates(teamId) {
+  if (!teamId) {
+    els.tradeDisplacedSelect.innerHTML = `<option value="">Pick a Step 1 team first...</option>`;
+    return;
+  }
+  const candidates = await fetchJson(`/teams/${teamId}/lineup-candidates?limit=${LINEUP_SIZE}`);
+  els.tradeDisplacedSelect.innerHTML = `<option value="">Choose the hitter losing the spot...</option>${hitterOptions(
+    candidates
+  )}`;
+}
+
+async function loadTradeIncomingCandidates(teamId) {
+  if (!teamId) {
+    els.tradeIncomingSelect.innerHTML = `<option value="">Pick the incoming hitter's team first...</option>`;
+    return;
+  }
+  const candidates = await fetchJson(`/teams/${teamId}/lineup-candidates?limit=${BENCH_CANDIDATE_LIMIT}`);
+  els.tradeIncomingSelect.innerHTML = `<option value="">Choose the incoming hitter...</option>${hitterOptions(
+    candidates
+  )}`;
 }
 
 async function loadRecent() {
@@ -592,6 +654,91 @@ async function prepareAndRun(event) {
   setStatus("Prepared matchup complete and saved. Drag the order around, tune the pitch mix, or add a reliever scenario and run another version.");
 }
 
+function formatSignedRuns(value) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function renderTradeEvaluation(evaluation) {
+  els.tradeEmpty.classList.add("hidden");
+  els.tradeContent.classList.remove("hidden");
+
+  const windowDelta = evaluation.window_runs_delta;
+  els.tradeWindowRuns.textContent = `${formatSignedRuns(windowDelta.mean)} runs`;
+  els.tradeWindowBand.textContent = `${formatSignedRuns(windowDelta.mean_ci_low)} to ${formatSignedRuns(
+    windowDelta.mean_ci_high
+  )}`;
+  els.tradePerGame.textContent = formatSignedRuns(evaluation.runs_delta_per_game);
+  els.tradeGamesCount.textContent = String(evaluation.games_evaluated);
+
+  const incoming = evaluation.incoming_hitter.hitter_name;
+  const displaced = evaluation.displaced_hitter.hitter_name;
+  const direction = windowDelta.mean >= 0 ? "adds" : "costs";
+  const magnitude = Math.abs(windowDelta.mean).toFixed(2);
+  const ciCrossesZero = windowDelta.mean_ci_low < 0 && windowDelta.mean_ci_high > 0;
+  els.tradeRead.textContent =
+    `Swapping ${incoming} in for ${displaced} ${direction} about ${magnitude} runs across the next ` +
+    `${evaluation.games_evaluated} games. ` +
+    (ciCrossesZero
+      ? "The confidence interval on the mean crosses zero, so this projects as roughly a wash — run more iterations or a longer window to sharpen the estimate."
+      : "The confidence interval on the mean stays on one side of zero, so the model sees a real difference between these two hitters over this window.");
+
+  els.tradeGameList.innerHTML = evaluation.game_deltas
+    .map(
+      (game) => `
+        <article class="sim-card">
+          <strong>${escapeHtml(game.game_date || "TBD")} vs ${escapeHtml(game.opponent_team_id.toUpperCase())}</strong>
+          <span>vs ${escapeHtml(game.opposing_pitcher_name)}<br />
+          Baseline ${game.baseline_runs_mean.toFixed(2)} → Variant ${game.variant_runs_mean.toFixed(2)}<br />
+          Delta ${formatSignedRuns(game.runs_delta.mean)} (CI ${formatSignedRuns(
+            game.runs_delta.mean_ci_low
+          )} to ${formatSignedRuns(game.runs_delta.mean_ci_high)})</span>
+        </article>
+      `
+    )
+    .join("");
+
+  els.tradeNotes.innerHTML = evaluation.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("");
+}
+
+async function evaluateTrade(event) {
+  event.preventDefault();
+  const teamId = els.teamSelect.value;
+  if (!teamId) {
+    setStatus("Choose a team in Step 1 before evaluating a trade.", "error");
+    return;
+  }
+
+  const displacedOption = els.tradeDisplacedSelect.options[els.tradeDisplacedSelect.selectedIndex];
+  const incomingOption = els.tradeIncomingSelect.options[els.tradeIncomingSelect.selectedIndex];
+  if (!els.tradeDisplacedSelect.value || !els.tradeIncomingSelect.value) {
+    setStatus("Choose both the displaced hitter and the incoming hitter.", "error");
+    return;
+  }
+  if (!els.tradeStartDate.value || !els.tradeEndDate.value) {
+    setStatus("Choose the evaluation window's start and end dates.", "error");
+    return;
+  }
+
+  setStatus("Running paired baseline and post-trade simulations across the upcoming schedule...");
+  const evaluation = await fetchJson("/trades/evaluate", {
+    method: "POST",
+    body: JSON.stringify({
+      team_id: teamId,
+      incoming_hitter: {
+        hitter_id: els.tradeIncomingSelect.value,
+        hitter_name: incomingOption?.dataset?.name || els.tradeIncomingSelect.value,
+        batting_side: incomingOption?.dataset?.side || null,
+      },
+      displaced_hitter_id: els.tradeDisplacedSelect.value,
+      start_date: els.tradeStartDate.value,
+      end_date: els.tradeEndDate.value,
+      max_games: Number(els.tradeMaxGames.value || 5),
+    }),
+  });
+  renderTradeEvaluation(evaluation);
+  setStatus("Trade evaluation complete. Adjust the window or swap different hitters to compare scenarios.");
+}
+
 function toggleCompareSelection(requestId, checked) {
   if (checked) {
     if (state.selectedCompareRequestIds.includes(requestId)) {
@@ -689,6 +836,10 @@ function handleDrop(event) {
 async function init() {
   const today = new Date("2025-06-03T12:00:00");
   els.gameDate.value = today.toISOString().slice(0, 10);
+  els.tradeStartDate.value = today.toISOString().slice(0, 10);
+  const windowEnd = new Date(today);
+  windowEnd.setDate(windowEnd.getDate() + 6);
+  els.tradeEndDate.value = windowEnd.toISOString().slice(0, 10);
   try {
     await loadTeams();
     await loadRecent();
@@ -735,6 +886,22 @@ els.relieverSelect.addEventListener("change", () => {
 
 els.prepareForm.addEventListener("submit", (event) => {
   prepareAndRun(event).catch((error) => setStatus(`Prepare error: ${error.message}`, "error"));
+});
+
+els.teamSelect.addEventListener("change", () => {
+  loadTradeDisplacedCandidates(els.teamSelect.value).catch((error) =>
+    setStatus(`Trade lineup error: ${error.message}`, "error")
+  );
+});
+
+els.tradeSourceTeamSelect.addEventListener("change", () => {
+  loadTradeIncomingCandidates(els.tradeSourceTeamSelect.value).catch((error) =>
+    setStatus(`Trade candidates error: ${error.message}`, "error")
+  );
+});
+
+els.tradeForm.addEventListener("submit", (event) => {
+  evaluateTrade(event).catch((error) => setStatus(`Trade evaluation error: ${error.message}`, "error"));
 });
 
 init();

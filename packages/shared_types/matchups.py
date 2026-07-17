@@ -197,6 +197,56 @@ class PrepareMatchupResponse(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class TradeHitter(BaseModel):
+    hitter_id: str
+    hitter_name: str
+    batting_side: str | None = Field(default=None, description="L, R, or S.")
+
+
+class TradeEvaluationRequest(BaseModel):
+    team_id: str
+    incoming_hitter: TradeHitter
+    displaced_hitter_id: str
+    start_date: str
+    end_date: str
+    max_games: int = Field(default=5, ge=1, le=15)
+    iteration_count: int = Field(default=500, ge=100, le=5000)
+    lineup_size: int = Field(default=9, ge=1, le=9)
+
+
+class TradeDeltaSummary(BaseModel):
+    mean: float
+    p10: float
+    p50: float
+    p90: float
+    mean_ci_low: float
+    mean_ci_high: float
+
+
+class TradeGameDelta(BaseModel):
+    game_id: int | None = None
+    game_date: str | None = None
+    opponent_team_id: str
+    opposing_pitcher_name: str
+    baseline_runs_mean: float
+    variant_runs_mean: float
+    runs_delta: TradeDeltaSummary
+    run_value_delta: TradeDeltaSummary
+
+
+class TradeEvaluationResponse(BaseModel):
+    team_id: str
+    incoming_hitter: TradeHitter
+    displaced_hitter: TradeHitter
+    games_evaluated: int
+    iteration_count: int
+    game_deltas: list[TradeGameDelta]
+    window_runs_delta: TradeDeltaSummary
+    window_run_value_delta: TradeDeltaSummary
+    runs_delta_per_game: float
+    notes: list[str] = Field(default_factory=list)
+
+
 class LiveRosterPlayer(BaseModel):
     team_id: str
     mlb_team_id: int

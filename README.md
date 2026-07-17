@@ -20,7 +20,8 @@ Initial implementation scaffold for the public-data-first baseball matchup simul
 - `services/modeling/baseline_utils.py`: shared training, holdout-split, and calibration helpers for baseline artifacts
 - `services/modeling/inference.py`: load saved artifacts and score hitter-level matchup projections
 - `services/simulation/engine.py`: run the first Monte Carlo matchup simulation summary
-- `apps/api/main.py`: FastAPI app with `GET /health` and `POST /matchups`
+- `services/trades/evaluator.py`: paired-delta comparison math for the trade evaluator (common random numbers, mean confidence intervals)
+- `apps/api/main.py`: FastAPI app with `GET /health`, `POST /matchups`, and `POST /trades/evaluate`
 - `packages/shared_types/matchups.py`: shared request and response schemas
 
 ## Quick Start

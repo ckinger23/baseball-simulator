@@ -207,6 +207,7 @@ def run_matchup_simulation(
     reliever_hitter_projections: list[dict[str, Any]] | None = None,
     reliever_entry_batter_number: int | None = None,
     reliever_entry_inning: int | None = None,
+    collect_samples: bool = False,
 ) -> dict[str, Any]:
     rng = random.Random(seed)
     runs_scored: list[float] = []
@@ -350,7 +351,7 @@ def run_matchup_simulation(
         reliever_inherited_runners_scored.append(float(inherited_runners_scored_total))
         run_values.append(round(run_total, 4))
 
-    return {
+    result: dict[str, Any] = {
         "iteration_count": iteration_count,
         "runs_scored": summarize_metric(runs_scored),
         "hits": summarize_metric(hits),
@@ -364,3 +365,9 @@ def run_matchup_simulation(
         "reliever_inherited_runners_scored": summarize_metric(reliever_inherited_runners_scored),
         "run_value": summarize_metric(run_values),
     }
+    if collect_samples:
+        result["samples"] = {
+            "runs_scored": runs_scored,
+            "run_value": run_values,
+        }
+    return result

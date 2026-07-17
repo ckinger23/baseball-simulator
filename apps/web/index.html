@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Baseball Matchup Simulator</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260403a" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260716a" />
   </head>
   <body>
     <div class="page-shell">
@@ -241,9 +241,104 @@
             </div>
           </div>
         </section>
+        <section class="panel trade-panel">
+          <div class="panel-heading">
+            <p class="panel-kicker">Step 6</p>
+            <h2>Trade Evaluator</h2>
+          </div>
+          <p class="helper-copy">
+            Swap a candidate acquisition into the lineup of the team selected in Step 1 and measure the run-production
+            change across upcoming games. Both lineups run with shared simulation randomness, so the delta band
+            reflects the player swap rather than Monte Carlo noise.
+          </p>
+
+          <form id="trade-form" class="control-form">
+            <div class="field-group">
+              <label class="field">
+                <span>Window Start</span>
+                <input id="trade-start-date" type="date" required />
+              </label>
+              <label class="field">
+                <span>Window End</span>
+                <input id="trade-end-date" type="date" required />
+              </label>
+            </div>
+
+            <div class="field-group">
+              <label class="field">
+                <span>Displaced Hitter (From Lineup)</span>
+                <select id="trade-displaced-select" required>
+                  <option value="">Pick a Step 1 team first...</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Max Games</span>
+                <input id="trade-max-games" type="number" min="1" max="15" value="5" />
+              </label>
+            </div>
+
+            <div class="field-group">
+              <label class="field">
+                <span>Incoming Hitter's Team</span>
+                <select id="trade-source-team-select">
+                  <option value="">Choose a team...</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Incoming Hitter</span>
+                <select id="trade-incoming-select" required>
+                  <option value="">Pick the incoming hitter's team first...</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="button-row">
+              <button id="trade-evaluate-btn" type="submit" class="button button-primary">Evaluate Trade</button>
+            </div>
+          </form>
+
+          <div id="trade-empty" class="empty-state">
+            Choose the displaced and incoming hitters, then evaluate to see the projected run delta with uncertainty.
+          </div>
+          <div id="trade-content" class="hidden">
+            <div class="metric-grid">
+              <div class="metric-card">
+                <span class="metric-label">Runs Added (Window)</span>
+                <strong id="trade-window-runs"></strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">90% CI On Mean Delta</span>
+                <strong id="trade-window-band"></strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Runs Added Per Game</span>
+                <strong id="trade-per-game"></strong>
+              </div>
+              <div class="metric-card">
+                <span class="metric-label">Games Evaluated</span>
+                <strong id="trade-games-count"></strong>
+              </div>
+            </div>
+
+            <div class="summary-card">
+              <h3 class="subheading">Trade Read</h3>
+              <p id="trade-read" class="summary-text"></p>
+            </div>
+
+            <div>
+              <h3 class="subheading">Per-Game Deltas</h3>
+              <div id="trade-game-list" class="simulation-grid"></div>
+            </div>
+
+            <div>
+              <h3 class="subheading">Evaluation Notes</h3>
+              <ul id="trade-notes" class="note-list"></ul>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260403a" defer></script>
+    <script src="/static/app.js?v=20260716a" defer></script>
   </body>
 </html>

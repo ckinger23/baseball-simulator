@@ -48,10 +48,21 @@ from packages.shared_types.matchups import (
     SmartMatchupDraftResponse,
     SimulationSummary,
     TeamSummary,
+    TradeDeltaSummary,
+    TradeEvaluationRequest,
+    TradeEvaluationResponse,
+    TradeGameDelta,
+    TradeHitter,
 )
 from services.external.mlb_stats_api import fetch_team_roster, fetch_team_schedule
 from services.modeling.inference import load_baseline_artifacts, score_hitter_projection
 from services.simulation.engine import run_matchup_simulation
+from services.trades.evaluator import (
+    aggregate_window_deltas,
+    build_variant_lineup,
+    paired_delta_samples,
+    summarize_delta,
+)
 
 app = FastAPI(
     title="Baseball Matchup Simulator API",
@@ -748,3 +759,165 @@ def prepare_matchup(request: PrepareMatchupRequest) -> PrepareMatchupResponse:
             )
 
     return PrepareMatchupResponse(draft=draft, matchup=matchup_response, notes=notes)
+
+
+def score_and_simulate_lineup(
+    connection: object,
+    artifacts: object,
+    matchup_request: MatchupRequest,
+    seed: int,
+    iteration_count: int,
+) -> dict[str, object]:
+    latest_form = fetch_latest_pitcher_form(connection, matchup_request.pitcher_id) if connection else None
+    pitcher_hand = fetch_pitcher_hand(connection, matchup_request.pitcher_id) if connection else None
+    pitcher_hand = pitcher_hand if pitcher_hand in {"L", "R"} else "R"
+    split_key = f"vs_{pitcher_hand}"
+    hitter_profiles = (
+        fetch_hitter_profiles(
+            connection,
+            [hitter.hitter_id for hitter in matchup_request.lineup],
+            split_key=split_key,
+        )
+        if connection
+        else {}
+    )
+
+    hitter_projections = [
+        score_hitter_projection(
+            artifacts=artifacts,
+            hitter=hitter.model_dump(),
+            pitcher_hand=pitcher_hand,
+            form_profile=latest_form,
+            hitter_profile=hitter_profiles.get(hitter.hitter_id),
+            manual_pitch_mix_adjustments=matchup_request.manual_pitch_mix_adjustments,
+        )
+        for hitter in matchup_request.lineup
+    ]
+
+    return run_matchup_simulation(
+        hitter_projections=hitter_projections,
+        iteration_count=iteration_count,
+        seed=seed,
+        collect_samples=True,
+    )
+
+
+@app.post("/trades/evaluate", response_model=TradeEvaluationResponse)
+def evaluate_trade(request: TradeEvaluationRequest) -> TradeEvaluationResponse:
+    schedule_games = fetch_team_schedule(
+        request.team_id,
+        start_date=request.start_date,
+        end_date=request.end_date,
+    )
+    if not schedule_games:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No live schedule games were found for team {request.team_id} between {request.start_date} and {request.end_date}.",
+        )
+    selected_games = schedule_games[: request.max_games]
+
+    artifacts = load_baseline_artifacts()
+    context, connection = require_database_connection()
+    try:
+        game_deltas: list[TradeGameDelta] = []
+        runs_delta_samples_by_game: list[list[float]] = []
+        run_value_delta_samples_by_game: list[list[float]] = []
+        displaced_hitter: TradeHitter | None = None
+
+        for game in selected_games:
+            draft = smart_draft_matchup(
+                SmartMatchupDraftRequest(
+                    team_id=request.team_id,
+                    game_date=str(game.get("game_date")),
+                    game_id=game.get("game_id"),
+                    lineup_size=request.lineup_size,
+                )
+            )
+
+            baseline_lineup = [hitter.model_dump() for hitter in draft.matchup_request.lineup]
+            try:
+                variant_lineup = build_variant_lineup(
+                    lineup=baseline_lineup,
+                    displaced_hitter_id=request.displaced_hitter_id,
+                    incoming_hitter=request.incoming_hitter.model_dump(),
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
+
+            if displaced_hitter is None:
+                displaced = next(
+                    hitter for hitter in baseline_lineup if hitter["hitter_id"] == request.displaced_hitter_id
+                )
+                displaced_hitter = TradeHitter(
+                    hitter_id=displaced["hitter_id"],
+                    hitter_name=displaced["hitter_name"],
+                    batting_side=displaced.get("batting_side"),
+                )
+
+            variant_draft = apply_lineup_override_to_draft(draft, variant_lineup)
+
+            seed = uuid5(NAMESPACE_URL, f"trade:{request.team_id}:{game.get('game_id')}").int % (2**32)
+            baseline_simulation = score_and_simulate_lineup(
+                connection=connection,
+                artifacts=artifacts,
+                matchup_request=draft.matchup_request,
+                seed=seed,
+                iteration_count=request.iteration_count,
+            )
+            variant_simulation = score_and_simulate_lineup(
+                connection=connection,
+                artifacts=artifacts,
+                matchup_request=variant_draft.matchup_request,
+                seed=seed,
+                iteration_count=request.iteration_count,
+            )
+
+            runs_deltas = paired_delta_samples(
+                baseline_simulation["samples"]["runs_scored"],
+                variant_simulation["samples"]["runs_scored"],
+            )
+            run_value_deltas = paired_delta_samples(
+                baseline_simulation["samples"]["run_value"],
+                variant_simulation["samples"]["run_value"],
+            )
+            runs_delta_samples_by_game.append(runs_deltas)
+            run_value_delta_samples_by_game.append(run_value_deltas)
+
+            game_deltas.append(
+                TradeGameDelta(
+                    game_id=game.get("game_id"),
+                    game_date=game.get("game_date"),
+                    opponent_team_id=draft.opponent_team.team_id,
+                    opposing_pitcher_name=draft.pitcher.pitcher_name,
+                    baseline_runs_mean=baseline_simulation["runs_scored"]["mean"],
+                    variant_runs_mean=variant_simulation["runs_scored"]["mean"],
+                    runs_delta=TradeDeltaSummary.model_validate(summarize_delta(runs_deltas)),
+                    run_value_delta=TradeDeltaSummary.model_validate(summarize_delta(run_value_deltas)),
+                )
+            )
+
+        window_runs_delta = aggregate_window_deltas(runs_delta_samples_by_game)
+        window_run_value_delta = aggregate_window_deltas(run_value_delta_samples_by_game)
+
+        notes = [
+            f"Evaluated {len(game_deltas)} upcoming games for {request.team_id} between {request.start_date} and {request.end_date}.",
+            f"Swapped {request.incoming_hitter.hitter_name} in for {displaced_hitter.hitter_name} at the same lineup spot in every game.",
+            "Baseline and variant lineups were simulated with common random numbers per game, so paired deltas isolate the player swap.",
+            "The p10-p90 band shows single-game outcome variability; the mean confidence interval says whether the swap's average effect is distinguishable from zero.",
+            "Window totals sum paired per-iteration deltas across games, giving a full distribution for runs added over the evaluation window.",
+        ]
+
+        return TradeEvaluationResponse(
+            team_id=request.team_id,
+            incoming_hitter=request.incoming_hitter,
+            displaced_hitter=displaced_hitter,
+            games_evaluated=len(game_deltas),
+            iteration_count=request.iteration_count,
+            game_deltas=game_deltas,
+            window_runs_delta=TradeDeltaSummary.model_validate(window_runs_delta),
+            window_run_value_delta=TradeDeltaSummary.model_validate(window_run_value_delta),
+            runs_delta_per_game=round(window_runs_delta["mean"] / len(game_deltas), 4),
+            notes=notes,
+        )
+    finally:
+        context.__exit__(None, None, None)
