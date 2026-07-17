@@ -15,6 +15,7 @@ The first version should be built with public MLB data so the modeling and produ
 - `database-schema.md`: starter relational schema for the app and modeling pipeline
 - `feature-catalog.md`: initial feature set for baseline models
 - `repo-structure.md`: suggested project layout and service boundaries
+- `handoff.md`: current build status and where the project is headed next
 
 ## V1 Product Summary
 
